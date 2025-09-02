@@ -490,6 +490,11 @@ class DeepConvNet(object):
         else:
             self.params['W' + str(self.num_layers)] = weight_scale * torch.randn(flat_size, num_classes, dtype=dtype, device=device)
         self.params['b' + str(self.num_layers)] = torch.zeros(num_classes, dtype=dtype, device=device)
+
+        if self.batchnorm:
+            for i in range(self.num_layers - 1):
+                self.params['gamma' + str(i + 1)] = torch.ones(num_filters[i], dtype=dtype, device=device)
+                self.params['beta' + str(i + 1)] = torch.zeros(num_filters[i], dtype=dtype, device=device)
         ################################################################
         #                      END OF YOUR CODE                        #
         ################################################################
@@ -600,25 +605,48 @@ class DeepConvNet(object):
         conv_cache = [None] * (self.num_layers - 1)
 
         if self.batchnorm:
-            pass
+            gamma = self.params['gamma1']
+            beta = self.params['beta1']
+            if 0 in self.max_pools:
+                conv_out[0], conv_cache[0] = Conv_BatchNorm_ReLU_Pool.forward(
+                    X, self.params['W1'], self.params['b1'], gamma, beta, 
+                    conv_param=conv_param, bn_param=self.bn_params[0], 
+                    pool_param=pool_param)
+            else:
+                conv_out[0], conv_cache[0] = Conv_BatchNorm_ReLU.forward(
+                    X, self.params['W1'], self.params['b1'], gamma, beta, 
+                    conv_param=conv_param, bn_param=self.bn_params[0])
         else:
             if 0 in self.max_pools:
-                conv_out[0], conv_cache[0] = Conv_ReLU_Pool.forward(X, self.params['W1'], self.params['b1'], conv_param=conv_param, pool_param=pool_param)
+                conv_out[0], conv_cache[0] = Conv_ReLU_Pool.forward(
+                    X, self.params['W1'], self.params['b1'], 
+                    conv_param=conv_param, pool_param=pool_param)
             else:
-                conv_out[0], conv_cache[0] = Conv_ReLU.forward(X, self.params['W1'], self.params['b1'], conv_param=conv_param)
+                conv_out[0], conv_cache[0] = Conv_ReLU.forward(
+                    X, self.params['W1'], self.params['b1'], 
+                    conv_param=conv_param)
 
         for i in range(1, self.num_layers - 1):
             W_name = 'W' + str(i + 1)
             b_name = 'b' + str(i + 1)
             if self.batchnorm:
-                pass
+                gamma = self.params['gamma' + str(i + 1)]
+                beta = self.params['beta' + str(i + 1)]
+                if i in self.max_pools:
+                    conv_out[i], conv_cache[i] = Conv_BatchNorm_ReLU_Pool.forward(
+                        conv_out[i - 1], self.params[W_name], self.params[b_name], gamma, beta,
+                        conv_param=conv_param, bn_param=self.bn_params[i], pool_param=pool_param)
+                else:
+                        conv_out[i], conv_cache[i] = Conv_BatchNorm_ReLU.forward(
+                            conv_out[i - 1], self.params[W_name], self.params[b_name], gamma, beta,
+                            conv_param=conv_param, bn_param=self.bn_params[i])
             else:
                 if i in self.max_pools:
                     conv_out[i], conv_cache[i] = Conv_ReLU_Pool.forward(conv_out[i - 1], self.params[W_name], self.params[b_name], conv_param=conv_param, pool_param=pool_param)
                 else:
                     conv_out[i], conv_cache[i] = Conv_ReLU.forward(conv_out[i - 1], self.params[W_name], self.params[b_name], conv_param=conv_param)
         
-        conv_out_flat = conv_out[-1].view(conv_out[-1].shape[0], -1)
+        conv_out_flat = conv_out[-1].reshape(conv_out[-1].shape[0], -1)
         scores, scores_cache = Linear.forward(conv_out_flat, self.params['W' + str(self.num_layers)], self.params['b' + str(self.num_layers)])
 
         #####################################################
@@ -653,7 +681,12 @@ class DeepConvNet(object):
             W_name = 'W' + str(i + 1)
             b_name = 'b' + str(i + 1)
             if self.batchnorm:
-                pass
+                gamma_name = 'gamma' + str(i + 1)
+                beta_name = 'beta' + str(i + 1)
+                if i in self.max_pools:
+                    dconv_out[i - 1], grads[W_name], grads[b_name], grads[gamma_name], grads[beta_name] = Conv_BatchNorm_ReLU_Pool.backward(dconv_out[i], conv_cache[i])
+                else:
+                    dconv_out[i - 1], grads[W_name], grads[b_name], grads[gamma_name], grads[beta_name] = Conv_BatchNorm_ReLU.backward(dconv_out[i], conv_cache[i])
             else:
                 if i in self.max_pools:
                     dconv_out[i - 1], grads[W_name], grads[b_name] = Conv_ReLU_Pool.backward(dconv_out[i], conv_cache[i])
@@ -661,7 +694,10 @@ class DeepConvNet(object):
                     dconv_out[i - 1], grads[W_name], grads[b_name] = Conv_ReLU.backward(dconv_out[i], conv_cache[i])
         
         if self.batchnorm:
-            pass
+            if 0 in self.max_pools:
+                dx, grads['W1'], grads['b1'], grads['gamma1'], grads['beta1'] = Conv_BatchNorm_ReLU_Pool.backward(dconv_out[0], conv_cache[0])
+            else:
+                dx, grads['W1'], grads['b1'], grads['gamma1'], grads['beta1'] = Conv_BatchNorm_ReLU.backward(dconv_out[0], conv_cache[0])
         else:
             if 0 in self.max_pools:
                 dx, grads['W1'], grads['b1'] = Conv_ReLU_Pool.backward(dconv_out[0], conv_cache[0])
